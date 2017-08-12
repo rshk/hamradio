@@ -32,6 +32,9 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
+import logging
+import sys
+import time
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, NamedTuple
@@ -39,7 +42,14 @@ from typing import Dict, List, NamedTuple
 import click
 import requests
 from pytz import utc
-import time
+
+logger = logging.getLogger(__name__)
+
+
+class RequestFailed(Exception):
+    def __init__(self, *args, response=None, **kwargs):
+        self.response = response
+        super().__init__(*args, **kwargs)
 
 
 class CallInfo(NamedTuple):
@@ -70,7 +80,6 @@ class Response(NamedTuple):
 
 
 def parse_date(date):
-    # .replace(tzinfo=utc)
     current = time.gmtime()
     parsed = time.strptime(date, '%H%Mz %d %b')
 
@@ -118,37 +127,90 @@ def parse_response(response):
     return Response(callsigns, spots)
 
 
-def get_spots(cdx, s=0, r=30):
+def _get_spots(callsign, s=0, rows=30):
     url = 'http://www.reversebeacon.net/dxsd1/sk.php'
-    query = {'cdx': str(cdx), 's': str(s), 'r': str(r)}
+    query = {'cdx': str(callsign),
+             's': str(s),
+             'r': str(rows)}
     response = requests.get(url, params=query)
 
     if not response.ok:
-        print('Error response: {}'.format(response.status_code))
-        print(response.text)
-        raise Exception('Request failed')
+        raise RequestFailed(
+            'Request failed with code {}: {}'
+            .format(response.status_code, response.text),
+            response=response)
 
     resp = response.json()
     return parse_response(resp)
 
 
+def get_spots(*args, retries=5, retry_time=2, **kwargs):
+    try:
+        return _get_spots(*args, **kwargs)
+    except RequestFailed as e:
+        logger.error('Request failed with code %s. Retry in %s seconds.',
+                     str(e.response.status_code), retry_time)
+        if retries > 0:
+            time.sleep(retry_time)
+            return get_spots(*args, retries=(retries - 1), **kwargs)
+        raise
+
+
+def watch(callsign, watch_time=60):
+    old_spots = set()
+
+    while True:
+        try:
+            resp = get_spots(callsign)
+        except RequestFailed:
+            logger.error('All requests failed')
+
+        new_spots = list(
+            spot for spot in resp.spots
+            if spot.id not in old_spots)
+
+        if len(new_spots) > 0:
+            logger.info('Received {} new spots'.format(len(new_spots)))
+
+            for spot in new_spots:
+                click.echo(format_spot(spot, resp.callsigns))
+                old_spots.add(spot.id)
+
+        else:
+            logger.info('No new spots')
+
+        time.sleep(watch_time)
+
+
+def format_spot(spot, callsigns):
+    return (
+        '\x1b[34m{s.timestamp:%Y-%m-%d %H:%M:%S}\x1b[0m '
+        '\x1b[1m{s.spot_de:^10s}\x1b[0m '
+        '{mhz:>10.6g} MHz  '
+        '\x1b[1m{s.snr:>2d} dB\x1b[0m  {s.speed:>2d} wpm  '
+        '\x1b[33m{de.country_name}\x1b[0m '
+        '\x1b[32m[ITU:{de.itu_zone} CQ:{de.cq_zone}]\x1b[0m '
+        '\x1b[36m{de.latitude},{de.longitude}\x1b[0m'
+        .format(s=spot,
+                mhz=spot.frequency / 1000,
+                de=callsigns[spot.spot_de]))
+
+
 @click.command()
 @click.argument('callsign')
-def main(callsign):
+@click.option('--watch', 'should_watch', is_flag=True, default=False)
+@click.option('--watch-time', type=int, default=60)
+def main(callsign, should_watch, watch_time):
+    if (should_watch):
+        return watch(callsign, watch_time)
+
     resp = get_spots(callsign)
     for spot in resp.spots:
-        click.echo(
-            '\x1b[34m{s.timestamp:%Y-%m-%d %H:%M:%S}\x1b[0m '
-            '\x1b[1m{s.spot_de:^10s}\x1b[0m '
-            '{mhz:>10.6g} MHz  '
-            '\x1b[1m{s.snr:>2d} dB\x1b[0m  {s.speed:>2d} wpm  '
-            '\x1b[33m{de.country_name}\x1b[0m '
-            '\x1b[32m[ITU:{de.itu_zone} CQ:{de.cq_zone}]\x1b[0m '
-            '\x1b[36m{de.latitude},{de.longitude}\x1b[0m'
-            .format(s=spot,
-                    mhz=spot.frequency / 1000,
-                    de=resp.callsigns[spot.spot_de]))
+        click.echo(format_spot(spot, resp.callsigns))
 
 
 if __name__ == '__main__':
+    handler = logging.StreamHandler(sys.stderr)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
     main()
