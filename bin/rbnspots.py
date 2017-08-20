@@ -100,7 +100,8 @@ def parse_date(date):
 
 def parse_response(response):
     callsigns = {}
-    for callsign, callinfo in response['ci'].items():
+
+    for callsign, callinfo in response.get('ci', {}).items():
         callsigns[callsign] = CallInfo(
             callsign=callsign,
             country_prefix=callinfo[0],
@@ -113,7 +114,7 @@ def parse_response(response):
             longitude=float(callinfo[7]))
 
     spots = []
-    for spotid, spotinfo in response['s'].items():
+    for spotid, spotinfo in response.get('s', {}).items():
         spots.append(SpotInfo(
             id=spotid,
             spot_de=spotinfo[0],
