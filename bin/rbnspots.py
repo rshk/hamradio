@@ -32,8 +32,6 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 """
 
-import logging
-import sys
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -43,7 +41,30 @@ import click
 import requests
 from pytz import utc
 
-logger = logging.getLogger(__name__)
+
+class OutputController:
+
+    def __init__(self):
+        self.last_is_status = False
+
+    def _clear_status(self):
+        if self.last_is_status:
+            click.echo('\x1b[A\x1b[K', nl=False, err=True)
+        self.last_is_status = False
+
+    def print_status(self, text, error=False):
+        self._clear_status()
+        if error:
+            text = click.style(text, 'red')
+        click.echo(text, err=True)
+        self.last_is_status = True
+
+    def echo(self, text):
+        self._clear_status()
+        click.echo(text)
+
+
+out = OutputController()
 
 
 class RequestFailed(Exception):
@@ -145,15 +166,23 @@ def _get_spots(callsign, s=0, rows=30):
     return parse_response(resp)
 
 
-def get_spots(*args, retries=5, retry_time=2, **kwargs):
+def get_spots(*args, retries=5, retry_time=3, **kwargs):
     try:
         return _get_spots(*args, **kwargs)
     except RequestFailed as e:
-        logger.error('Request failed with code %s. Retry in %s seconds.',
-                     str(e.response.status_code), retry_time)
+
         if retries > 0:
-            time.sleep(retry_time)
+
+            for x in range(retry_time):
+                out.print_status(
+                    'Request failed with code {}. Retry in {} seconds...'
+                    .format(e.response.status_code, retry_time - x),
+                    error=True)
+
+                time.sleep(1)
+
             return get_spots(*args, retries=(retries - 1), **kwargs)
+
         raise
 
 
@@ -161,24 +190,30 @@ def watch(callsign, watch_time=60):
     old_spots = set()
 
     while True:
+
         try:
             resp = get_spots(callsign)
+
         except RequestFailed:
-            logger.error('All requests failed')
-
-        new_spots = list(
-            spot for spot in resp.spots
-            if spot.id not in old_spots)
-
-        if len(new_spots) > 0:
-            logger.info('Received {} new spots'.format(len(new_spots)))
-
-            for spot in new_spots:
-                click.echo(format_spot(spot, resp.callsigns))
-                old_spots.add(spot.id)
+            out.print_status('All requests failed', error=True)
 
         else:
-            logger.info('No new spots')
+
+            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+            new_spots = list(
+                spot for spot in resp.spots
+                if spot.id not in old_spots)
+
+            if len(new_spots) > 0:
+                out.echo('Received {} new spots at {}'
+                         .format(len(new_spots), timestamp))
+
+                for spot in new_spots:
+                    out.echo(format_spot(spot, resp.callsigns))
+                    old_spots.add(spot.id)
+
+            out.print_status('Latest update: {}'.format(timestamp))
 
         time.sleep(watch_time)
 
@@ -199,19 +234,16 @@ def format_spot(spot, callsigns):
 
 @click.command()
 @click.argument('callsign')
-@click.option('--watch', 'should_watch', is_flag=True, default=False)
-@click.option('--watch-time', type=int, default=60)
+@click.option('-w', '--watch', 'should_watch', is_flag=True, default=False)
+@click.option('--watch-time', type=int, default=30)
 def main(callsign, should_watch, watch_time):
     if (should_watch):
         return watch(callsign, watch_time)
 
     resp = get_spots(callsign)
     for spot in resp.spots:
-        click.echo(format_spot(spot, resp.callsigns))
+        out.echo(format_spot(spot, resp.callsigns))
 
 
 if __name__ == '__main__':
-    handler = logging.StreamHandler(sys.stderr)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
     main()
