@@ -42,6 +42,19 @@ import requests
 from pytz import utc
 
 
+try:
+    from geopy.distance import great_circle
+
+    def get_distance(p1, p2):
+        return format(int(great_circle(p1, p2).km))
+
+except ImportError:
+    print('WARNING: geopy not available, unable to calculate distances')
+
+    def get_distance(p1, p2):
+        return 'N/A'
+
+
 class OutputController:
 
     def __init__(self):
@@ -219,17 +232,64 @@ def watch(callsign, watch_time=60):
 
 
 def format_spot(spot, callsigns):
+
+    dx_call = callsigns[spot.spot_dx]  # TX
+    de_call = callsigns[spot.spot_de]  # RX
+
     return (
         '\x1b[34m{s.timestamp:%Y-%m-%d %H:%M:%S}\x1b[0m '
+
         '\x1b[1m{s.spot_de:<10s}\x1b[0m '
-        '{mhz:>10.6g} MHz  '
-        '\x1b[1m{s.snr:>2d} dB\x1b[0m  {s.speed:>2d} wpm  '
-        '\x1b[33m{de.country_name}\x1b[0m '
-        '\x1b[32m[ITU:{de.itu_zone} CQ:{de.cq_zone}]\x1b[0m '
-        '\x1b[36m{de.latitude},{de.longitude}\x1b[0m'
+        '\x1b[38;5;244m{s.spot_dx:<10s}\x1b[0m '
+
+        '{frequency}  '
+        # '\x1b[1;48;5;124m {s.snr:>2d} dB \x1b[0m  '
+        '{power}  '
+        '{s.speed:>2d} wpm  '
+        '\x1b[38;5;202m{de.country_name}\x1b[0m '
+
+        '\x1b[32mITU:\x1b[1;32m{de.itu_zone}\x1b[0m '
+        '\x1b[32mCQ:\x1b[1;32m{de.cq_zone}\x1b[0m '
+
+        '\x1b[36m{de.latitude},{de.longitude}\x1b[0m '
+        '({distance} km)'
         .format(s=spot,
-                mhz=spot.frequency / 1000,
-                de=callsigns[spot.spot_de]))
+                frequency=format_frequency(spot.frequency),
+                power=format_power(spot.snr),
+                de=de_call,
+                distance=get_distance(
+                    (dx_call.latitude, dx_call.longitude),
+                    (de_call.latitude, de_call.longitude))))
+
+
+def format_frequency(freq):
+
+    C_MHZ = '\x1b[1;38;5;49m'
+    C_KHZ = '\x1b[1;38;5;37m'
+    C_HZ = '\x1b[0;38;5;31m'
+    C_RESET = '\x1b[0m'
+
+    f_mhz = int(freq / 1000)
+    f_khz = int(freq % 1000)
+    f_hz = int(freq % 1)
+    return ('{}{}.{}{:03d}{}{:03d}{} MHz'
+            .format(C_MHZ, f_mhz, C_KHZ, f_khz, C_HZ, f_hz, C_RESET))
+
+
+def _get_power_color(power):
+    colors = [55, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 25, 25, 25, 25, 25,
+              31, 31, 31, 31, 31, 36, 36, 36, 36, 36, 35, 35, 35, 35, 35, 34,
+              34, 34, 34, 34, 34, 34, 34, 34, 34, 70, 70, 70, 70, 70, 106, 106,
+              106, 106, 106, 136, 136, 136, 136, 136, 130, 130, 130, 130, 130,
+              124, 124, 124, 124]
+
+    return colors[min(max(0, power), len(colors) - 1)]
+
+
+def format_power(power):
+    color = _get_power_color(power)
+    # return '\x1b[38;5;{}m{} dB\x1b[0m'.format(color, power)
+    return '\x1b[48;5;{}m {} dB \x1b[0m'.format(color, power)
 
 
 @click.command()
