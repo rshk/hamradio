@@ -221,7 +221,7 @@ def watch(callsign, watch_time=60):
 def format_spot(spot, callsigns):
     return (
         '\x1b[34m{s.timestamp:%Y-%m-%d %H:%M:%S}\x1b[0m '
-        '\x1b[1m{s.spot_de:^10s}\x1b[0m '
+        '\x1b[1m{s.spot_de:<10s}\x1b[0m '
         '{mhz:>10.6g} MHz  '
         '\x1b[1m{s.snr:>2d} dB\x1b[0m  {s.speed:>2d} wpm  '
         '\x1b[33m{de.country_name}\x1b[0m '
