@@ -272,7 +272,7 @@ def format_frequency(freq):
     f_mhz = int(freq / 1000)
     f_khz = int(freq % 1000)
     f_hz = int(freq % 1)
-    return ('{}{}.{}{:03d}{}{:03d}{} MHz'
+    return ('{}{:>4}.{}{:03d}{}{:03d}{} MHz'
             .format(C_MHZ, f_mhz, C_KHZ, f_khz, C_HZ, f_hz, C_RESET))
 
 
@@ -288,8 +288,7 @@ def _get_power_color(power):
 
 def format_power(power):
     color = _get_power_color(power)
-    # return '\x1b[38;5;{}m{} dB\x1b[0m'.format(color, power)
-    return '\x1b[48;5;{}m {} dB \x1b[0m'.format(color, power)
+    return '\x1b[48;5;{}m {:>2} dB \x1b[0m'.format(color, power)
 
 
 @click.command()
