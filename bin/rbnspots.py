@@ -1,8 +1,10 @@
+#!/usr/bin/env python
+
 """RBN spots
 
 Show "spots" from the Reverse Beacon Network (http://reversebeacon.net/).
 
-Copyright (c) 2017 Samuele Santi
+Copyright (c) 2017-2018 Samuele Santi
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
