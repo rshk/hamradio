@@ -254,6 +254,9 @@ def main(call, count, timelimit, direction, band):
     if direction in DIRECTION_OPTIONS:
         direction = DIRECTION_OPTIONS[direction]
 
+    if band in BAND_OPTIONS:
+        band = BAND_OPTIONS[band]
+
     spots = fetch_spots(
         call=call, count=count, timelimit=timelimit,
         direction=direction, band=band)
